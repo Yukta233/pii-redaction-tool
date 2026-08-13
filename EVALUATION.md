@@ -1,86 +1,75 @@
-# Evaluation Strategy & Metrics Report
+# Evaluation Strategy & Results
 
-## 1. Why a synthetic test set, not just the prospectus
+## Why a synthetic test set instead of just the prospectus
 
-The provided document (`Red_Herring_Prospectus.docx`) is a real IPO
-filing. It genuinely contains four of the nine required PII types —
-names, company names, addresses, emails, and phone numbers — but it
-does **not** naturally contain SSNs, credit card numbers, dates of
-birth, or IP addresses (these don't belong in a securities filing).
+`Red_Herring_Prospectus.docx` is a real filing, so it only contains four
+of the nine PII types we're asked to handle — names, companies,
+addresses, emails, phone numbers. There's no SSN, credit card, DOB, or
+IP address anywhere in it (a securities filing wouldn't have those), and
+there's no ground truth for it either — nobody has hand-labeled which of
+the ~2,300 name-like occurrences in a 400-page document are actually
+correct.
 
-Evaluating only against the prospectus would leave 4 of 9 required PII
-types completely untested, and there is no ground truth for it anyway
-(nobody has manually labeled which of the ~2,300 name occurrences and
-~2,000 company mentions in a 400+ page filing are "correct").
+So I split this into two checks:
 
-So the evaluation uses **two complementary checks**:
+1. A small hand-labeled synthetic document (a support-ticket log, same
+   format as the assignment brief) covering all 9 PII types with known
+   ground truth. The precision/recall numbers below come from this.
+2. Running the real tool against the actual prospectus and spot-checking
+   the output — this doesn't produce a score, but it's the only way to
+   see how the tool behaves at real document scale and formatting.
 
-1. **Quantitative** — a small, hand-labeled synthetic document styled as
-   a support-ticket log (matching the format shown in the assignment
-   brief), covering all 9 PII types with a known ground truth. This is
-   what the precision/recall/accuracy numbers below are computed from.
-2. **Qualitative** — running the tool on the real prospectus and
-   visually inspecting the rendered output (converted to PDF) to confirm
-   formatting/layout survives redaction and spot-check for obviously
-   missed or wrongly-redacted content at full document scale (see
-   "Qualitative check" section below).
+## Ground truth
 
-## 2. Ground truth construction
+`eval/test_data.py` has a 4-ticket synthetic log plus a hand-built list
+of every PII instance in it as `(type, exact_text)` pairs — including
+deliberate repeats, e.g. an email quoted twice in one ticket should be
+detected twice. 30 labeled instances total, across all 9 types, with
+some non-PII noise mixed in (ticket numbers, order refs) to check the
+tool doesn't over-redact.
 
-`eval/test_data.py` contains a 4-ticket synthetic document and a
-hand-built list of every PII instance in it: `(pii_type, exact_text)`
-pairs, including deliberate repeats (e.g. an email address quoted twice
-in one ticket counts as two expected detections, matching what should
-happen in the real redacted output).
+## How matching works
 
-29 labeled PII instances total, covering all 9 required types plus
-realistic noise around them (ticket numbers, order references) to test
-that non-PII isn't over-redacted.
+I compare detections and ground truth as multisets of
+`(type, normalized_value)`, not by character offset — what matters here
+is whether the right value got flagged as the right type the right
+number of times, not exact spans. Values are whitespace-normalized
+before comparing.
 
-## 3. Matching method
+- **TP** — a detection matches a ground-truth pair.
+- **FP** — a detection with no matching ground-truth pair (redacted
+  something that isn't PII, or tagged it as the wrong type).
+- **FN** — a ground-truth pair with nothing matching it (missed real
+  PII).
 
-Detections and ground truth are compared as **multisets** of
-`(pii_type, normalized_value)` — not by exact character span — because
-what matters for this task is "did the right *value* get flagged as the
-right *type* the right number of times," not exact offsets. Values are
-whitespace-normalized before comparison.
-
-- **True Positive (TP):** a detection matches a ground-truth
-  `(type, value)` pair.
-- **False Positive (FP):** a detection with no matching ground-truth
-  pair (something was redacted that shouldn't have been, or was tagged
-  as the wrong type).
-- **False Negative (FN):** a ground-truth pair with no matching
-  detection (real PII that was missed).
-
-## 4. Metrics
+## Metrics
 
 ```
-Precision = TP / (TP + FP)   — of what we redacted, how much was really PII
-Recall    = TP / (TP + FN)   — of all real PII, how much did we catch
+Precision = TP / (TP + FP)
+Recall    = TP / (TP + FN)
 Accuracy  = TP / (TP + FP + FN)
 ```
 
-Accuracy is defined over the union of detected + expected items rather
-than the classic `(TP+TN)/(TP+TN+FP+FN)`, because "true negatives"
-(every possible substring that correctly wasn't flagged) is unbounded in
-free text and not a meaningful quantity here — this is standard practice
-for span-extraction tasks like NER and information extraction.
+I'm using this accuracy formula instead of the classic
+`(TP+TN)/(TP+TN+FP+FN)` because true negatives — every substring that
+correctly wasn't flagged — aren't a well-defined, bounded quantity in
+free text. This is the usual way accuracy gets defined for span
+extraction / NER tasks.
 
-## 5. Results
+## Results
 
 ### Overall
 
 | Metric | Value |
 |---|---|
-| Precision | **0.875** (28 / 32) |
-| Recall | **0.933** (28 / 30) |
-| Accuracy | **0.824** (28 / 34) |
-| True Positives | 28 |
-| False Positives | 4 |
-| False Negatives | 2 |
+| Precision | 0.875 (28 / 32) |
+| Recall | 0.933 (28 / 30) |
+| Accuracy | 0.824 (28 / 34) |
+| TP | 28 |
+| FP | 4 |
+| FN | 2 |
 
-### Per PII type
+### By type
 
 | Type | Precision | Recall | Accuracy | TP | FP | FN |
 |---|---|---|---|---|---|---|
@@ -94,65 +83,66 @@ for span-extraction tasks like NER and information extraction.
 | Name | 0.75 | 0.75 | 0.60 | 3 | 1 | 1 |
 | Company | 0.50 | 0.75 | 0.43 | 3 | 3 | 1 |
 
-**Reading this:** every regex-detected category (structured formats)
-hits perfect precision and recall on the test set, as expected — these
-formats are unambiguous. The two NER-dependent categories (Name,
-Company) are meaningfully weaker, which is expected and typical for
-small general-purpose NER models; see error analysis below.
+Every regex-based category is perfect — those formats are unambiguous,
+so this isn't surprising. The two NER-dependent categories (Name,
+Company) are noticeably weaker. That's a small general-purpose model
+doing what small general-purpose models do; here's specifically where
+it broke.
 
-## 6. Error analysis
+## Error analysis
 
-**False negatives (2):**
-- `NAME — "Ananya Sharma"`: spaCy's small model tagged this as two
-  separate `GPE` (place) entities instead of one `PERSON` entity.
-- `COMPANY — "Waterloo Industrial Park VI Private Limited"`: tagged as
-  `PERSON` instead of `ORG` by the same model (name/company confusion
-  goes both directions).
+**Missed (2):**
+- `NAME — "Ananya Sharma"` — spaCy split this into two `GPE` (place)
+  entities instead of one `PERSON`.
+- `COMPANY — "Waterloo Industrial Park VI Private Limited"` — tagged as
+  `PERSON` instead of `ORG`.
 
-**False positives (4):**
-- `COMPANY — "SSN"`: the bare acronym "SSN" was mistagged as an ORG in
-  one sentence.
-- `COMPANY — "IP"`: same issue with the token "IP" near "IP address".
-- `NAME — "Waterloo Industrial Park VI Private Limited"`: the flip side
-  of the false negative above — one wrong label produces both an FN
-  (for the correct type) and an FP (for the wrong type) simultaneously.
+**Wrongly flagged (4):**
+- `COMPANY — "SSN"` — the bare acronym got tagged as an org.
+- `COMPANY — "IP"` — same problem, near the phrase "IP address."
+- `NAME — "Waterloo Industrial Park VI Private Limited"` — the flip
+  side of the missed company above: one wrong label produces both a
+  miss (wrong type) and a false positive (right span, wrong type) at
+  once.
+- *[fourth company false positive — pull the exact value from
+  `eval/evaluation_report.json`, since the report needs the real text
+  here, not a guess]*
 
-All four errors trace back to the same root cause: **`en_core_web_sm` is
-a small, general-purpose model** trained on mixed-case news/web text,
-and it occasionally confuses PERSON/ORG/GPE on names it hasn't seen much
-of in training, or on short capitalized tokens near other flagged
-content. None of the structured-format regex detectors (email, phone,
-SSN, credit card, IP, DOB) produced a single error on the test set.
+All of these trace back to the same thing: `en_core_web_sm` is trained
+on general news/web text and struggles with names or short capitalized
+tokens it hasn't seen much of. None of the regex detectors (email,
+phone, SSN, credit card, IP, DOB) got anything wrong on the test set —
+which makes sense, since those formats don't leave much room for
+ambiguity.
 
-## 7. Design choice: what does NOT count as PII
+## What I chose not to treat as PII
 
-To keep precision meaningful, the following are **intentionally not**
-treated as PII (stated explicitly, per the assignment's evaluation
-criteria):
-
-- Ticket/order/reference numbers (e.g. "Ticket #4521") — identify a
+- Ticket/order/reference numbers ("Ticket #4521") — these identify a
   case, not a person.
 - Company registration/CIN numbers — public regulatory identifiers.
-- Standalone job titles without an attached name.
+- Job titles with no name attached.
 
-## 8. Qualitative check on the real document
+## Running it against the real prospectus
 
-`Red_Herring_Prospectus.docx` (400+ pages) was run through the full
-pipeline end-to-end. Result: 4,521 total redactions (2,321 names, 2,040
-companies, 82 phone numbers, 70 emails, 8 addresses; 0 SSN/credit
-card/DOB/IP instances found, as expected for this document type). The
-output was converted to PDF and visually spot-checked to confirm table
-formatting, colors, and layout were preserved after redaction. One
-limitation observed at this scale that the small synthetic test set
-didn't surface: **entities written in ALL CAPS** (common in legal
-boilerplate, e.g. promoter names and company names on the cover page)
-are missed by spaCy more often than mixed-case text — a lower-recall
-condition specific to this document's formatting register. This is
-documented in `README.md` under "Known limitations."
+`Red_Herring_Prospectus.docx` (400+ pages) went through the full
+pipeline end to end: 4,521 total redactions — 2,321 names, 2,040
+companies, 82 phone numbers, 70 emails, 8 addresses, and 0 of
+SSN/credit card/DOB/IP (expected, given the document type). I converted
+the output to PDF and checked it visually — table formatting, colors,
+and layout all survived redaction.
 
-## 9. How to reproduce
+One thing the small synthetic set didn't surface: **entities written in
+ALL CAPS** — common in legal boilerplate, e.g. promoter and company
+names on the cover page — get missed by spaCy noticeably more often
+than mixed-case text does. That's a real, document-specific recall gap
+worth knowing about; it's called out in `README.md` under "Known
+limitations."
+
+## Reproducing this
 
 ```bash
 python eval/run_eval.py
 ```
-Outputs the same numbers above to stdout and to `eval/evaluation_report.json`.
+
+Prints the same numbers above to stdout and writes them to
+`eval/evaluation_report.json`.
