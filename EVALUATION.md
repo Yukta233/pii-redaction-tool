@@ -138,6 +138,37 @@ than mixed-case text does. That's a real, document-specific recall gap
 worth knowing about; it's called out in `README.md` under "Known
 limitations."
 
+A second issue only showed up at this scale, and it's more serious than
+the ALL-CAPS gap above. Prospectuses define terms in Title Case
+throughout ("the Offer", "the Board", "Ind AS", "the Report"), and
+spaCy sometimes reads these as PERSON or ORG entities the same way it
+would a real name. Because the tool maps each unique value to one fake
+value everywhere it appears, a single bad tag on a term like this
+doesn't stay a one-off — it gets replayed across every occurrence in
+the document. I found one such term substituted well over a hundred
+times and a couple of others substituted dozens of times. That's a
+precision problem the 4-ticket synthetic set is too small to ever
+surface, since it only has a handful of paragraphs and no repeated
+defined terms — it only shows up once you run something long and
+legally formatted through the pipeline.
+
+There's also a formatting bug in phone number handling: the regex
+doesn't always capture the area code together with the local number, so
+in a few places the original country/area code is left in the text
+and the fake replacement (which prepends its own "+91") ends up
+duplicated next to it, e.g. `+91 22 +91 6006611155`. This is a bug, not
+a precision/recall issue — the number is still redacted, just malformed.
+
+Neither of these affected the synthetic-set numbers above, since both
+are artifacts of long-document structure and repeated legal phrasing
+that a 4-ticket test set doesn't contain. Given more time, the fix I'd
+try first for the over-redaction is a frequency check — a real name or
+company repeating word-for-word 50+ times in one document is itself a
+signal worth flagging for review rather than auto-replacing. For the
+phone bug, the fix is to have the regex capture the full number
+including its area code, or drop the fixed "+91 " prefix on the fake
+value and use the original match's own prefix instead.
+
 ## Reproducing this
 
 ```bash
