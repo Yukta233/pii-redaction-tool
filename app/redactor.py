@@ -22,7 +22,7 @@ from typing import List, Dict, Tuple
 import spacy
 from faker import Faker
 
-nlp = spacy.load("en_core_web_sm")
+nlp = spacy.load("en_core_web_sm", disable=["parser", "tagger", "lemmatizer", "attribute_ruler"])
 fake = Faker()
 Faker.seed(42)  # reproducible fake values across runs
 
@@ -119,6 +119,50 @@ def find_regex_matches(text: str) -> List[Match]:
 
 def find_address_matches(text: str) -> List[Match]:
     return [Match(m.start(), m.end(), m.group(0), "ADDRESS") for m in ADDRESS_REGEX.finditer(text)]
+
+
+def find_ner_matches_batch(texts: List[str]) -> List[List[Match]]:
+    """Batched version of NER matching: runs spaCy's nlp.pipe ONCE across
+    every line from every input text, instead of once per text. Calling
+    nlp.pipe separately per paragraph (as a naive per-paragraph loop would)
+    incurs per-call overhead thousands of times over on a large document;
+    batching everything into a single nlp.pipe call is dramatically faster
+    for documents with many short paragraphs (e.g. tables), which is the
+    common case for a Word document with hundreds of pages.
+
+    Returns a list of match-lists, one per input text, in the same order.
+    """
+    # Flatten: (text_index, line_offset_within_text, line_string)
+    flat_lines: List[str] = []
+    flat_owner: List[Tuple[int, int]] = []  # (text_index, char_offset)
+
+    per_text_lines: List[List[Tuple[str, int]]] = []  # (line, offset) per text
+    for text in texts:
+        lines = text.splitlines(keepends=True)
+        offsets = []
+        running = 0
+        for line in lines:
+            offsets.append(running)
+            running += len(line)
+        stripped = [ln.rstrip("\n").rstrip("\r") for ln in lines]
+        per_text_lines.append(list(zip(stripped, offsets)))
+
+    for text_idx, lines in enumerate(per_text_lines):
+        for line, offset in lines:
+            flat_lines.append(line)
+            flat_owner.append((text_idx, offset))
+
+    results: List[List[Match]] = [[] for _ in texts]
+    if not flat_lines:
+        return results
+
+    for doc, (text_idx, offset) in zip(nlp.pipe(flat_lines, batch_size=500), flat_owner):
+        for ent in doc.ents:
+            if ent.label_ == "PERSON":
+                results[text_idx].append(Match(offset + ent.start_char, offset + ent.end_char, ent.text, "NAME"))
+            elif ent.label_ == "ORG":
+                results[text_idx].append(Match(offset + ent.start_char, offset + ent.end_char, ent.text, "COMPANY"))
+    return results
 
 
 def find_ner_matches(text: str) -> List[Match]:
@@ -219,7 +263,26 @@ class Redactor:
         matches += find_address_matches(text)
         matches += find_ner_matches(text)
         matches = _resolve_overlaps(matches)
+        return self._apply_matches(text, matches)
 
+    def redact_batch(self, texts: List[str]) -> List[Tuple[str, List[Dict]]]:
+        """Redact many texts (e.g. every paragraph in a document) with a
+        SINGLE batched spaCy pass across all of them, instead of one pass
+        per text. This is the method docx_redactor.py should use for
+        real documents -- calling .redact() in a per-paragraph loop is
+        correct but slow (thousands of separate spaCy calls on a long
+        document); this method gets identical results much faster."""
+        ner_matches_per_text = find_ner_matches_batch(texts)
+        results = []
+        for text, ner_matches in zip(texts, ner_matches_per_text):
+            matches = find_regex_matches(text)
+            matches += find_address_matches(text)
+            matches += ner_matches
+            matches = _resolve_overlaps(matches)
+            results.append(self._apply_matches(text, matches))
+        return results
+
+    def _apply_matches(self, text: str, matches: List[Match]) -> Tuple[str, List[Dict]]:
         out = []
         last = 0
         log = []
