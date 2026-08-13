@@ -1,0 +1,6 @@
+flask==3.0.3
+python-docx==1.1.2
+faker==26.0.0
+spacy==3.8.15
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+gunicorn==22.0.0

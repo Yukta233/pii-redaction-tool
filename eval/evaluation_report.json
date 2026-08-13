@@ -1,0 +1,108 @@
+{
+  "per_type": {
+    "ADDRESS": {
+      "true_positives": 2,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "accuracy": 1.0
+    },
+    "COMPANY": {
+      "true_positives": 3,
+      "false_positives": 3,
+      "false_negatives": 1,
+      "precision": 0.5,
+      "recall": 0.75,
+      "accuracy": 0.429
+    },
+    "CREDIT_CARD": {
+      "true_positives": 2,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "accuracy": 1.0
+    },
+    "DOB": {
+      "true_positives": 2,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "accuracy": 1.0
+    },
+    "EMAIL": {
+      "true_positives": 7,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "accuracy": 1.0
+    },
+    "IP_ADDRESS": {
+      "true_positives": 2,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "accuracy": 1.0
+    },
+    "NAME": {
+      "true_positives": 3,
+      "false_positives": 1,
+      "false_negatives": 1,
+      "precision": 0.75,
+      "recall": 0.75,
+      "accuracy": 0.6
+    },
+    "PHONE": {
+      "true_positives": 5,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "accuracy": 1.0
+    },
+    "SSN": {
+      "true_positives": 2,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "accuracy": 1.0
+    }
+  },
+  "overall": {
+    "true_positives": 28,
+    "false_positives": 4,
+    "false_negatives": 2,
+    "precision": 0.875,
+    "recall": 0.933,
+    "accuracy": 0.824
+  },
+  "false_positive_examples": [
+    {
+      "type": "COMPANY",
+      "value": "SSN"
+    },
+    {
+      "type": "NAME",
+      "value": "Waterloo Industrial Park VI Private Limited"
+    },
+    {
+      "type": "COMPANY",
+      "value": "IP"
+    }
+  ],
+  "false_negative_examples": [
+    {
+      "type": "NAME",
+      "value": "Ananya Sharma"
+    },
+    {
+      "type": "COMPANY",
+      "value": "Waterloo Industrial Park VI Private Limited"
+    }
+  ]
+}

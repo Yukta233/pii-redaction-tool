@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PII Redaction Tool</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262a34;
+    --text: #e8e9ed; --muted: #8b8fa3; --accent: #6c8cff; --accent2: #3fd3a5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px;
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 36px; max-width: 520px; width: 100%;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 6px; }
+  p.sub { color: var(--muted); margin: 0 0 28px; font-size: 0.92rem; }
+  .drop {
+    border: 1.5px dashed var(--border); border-radius: 10px; padding: 32px;
+    text-align: center; cursor: pointer; transition: border-color .15s;
+  }
+  .drop:hover, .drop.drag { border-color: var(--accent); }
+  .drop span { color: var(--muted); font-size: 0.88rem; }
+  input[type=file] { display: none; }
+  button {
+    margin-top: 18px; width: 100%; padding: 12px; border: none; border-radius: 8px;
+    background: var(--accent); color: white; font-size: 0.95rem; font-weight: 600;
+    cursor: pointer; transition: opacity .15s;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .filename { margin-top: 12px; font-size: 0.85rem; color: var(--accent2); word-break: break-all; }
+  .result { margin-top: 22px; padding: 16px; background: #11141a; border-radius: 10px; border: 1px solid var(--border); }
+  .result h3 { margin: 0 0 10px; font-size: 0.9rem; color: var(--muted); font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .chip { background: #1e2230; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 0.78rem; color: var(--muted); }
+  .chip b { color: var(--text); }
+  a.dl {
+    display: block; text-align: center; background: var(--accent2); color: #06110c;
+    padding: 10px; border-radius: 8px; font-weight: 700; text-decoration: none; font-size: 0.9rem;
+  }
+  .error { color: #ff6b6b; margin-top: 14px; font-size: 0.85rem; }
+  .spin { display:inline-block; width:14px;height:14px;border:2px solid #fff5;border-top-color:#fff;border-radius:50%; animation: sp .7s linear infinite; vertical-align:-2px; margin-right:6px;}
+  @keyframes sp { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>PII Redaction Tool</h1>
+    <p class="sub">Upload a .docx file. Names, emails, phone numbers, addresses, company names, SSNs, credit card numbers, dates of birth, and IP addresses are detected and replaced with realistic fake values.</p>
+
+    <label class="drop" id="drop">
+      <span id="dropText">Click to choose a .docx file, or drag it here</span>
+      <input type="file" id="file" accept=".docx">
+    </label>
+    <div class="filename" id="filename"></div>
+
+    <button id="go" disabled>Redact document</button>
+    <div id="error" class="error"></div>
+    <div id="result" class="result" style="display:none"></div>
+  </div>
+
+<script>
+const fileInput = document.getElementById('file');
+const drop = document.getElementById('drop');
+const dropText = document.getElementById('dropText');
+const filenameEl = document.getElementById('filename');
+const goBtn = document.getElementById('go');
+const resultEl = document.getElementById('result');
+const errorEl = document.getElementById('error');
+let selectedFile = null;
+
+drop.addEventListener('click', () => fileInput.click());
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+drop.addEventListener('drop', e => { if (e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => { if (e.target.files.length) setFile(e.target.files[0]); });
+
+function setFile(f) {
+  if (!f.name.toLowerCase().endsWith('.docx')) { errorEl.textContent = 'Please choose a .docx file.'; return; }
+  selectedFile = f;
+  errorEl.textContent = '';
+  filenameEl.textContent = f.name;
+  goBtn.disabled = false;
+  resultEl.style.display = 'none';
+}
+
+goBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  goBtn.disabled = true;
+  goBtn.innerHTML = '<span class="spin"></span>Redacting...';
+  errorEl.textContent = '';
+  resultEl.style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('file', selectedFile);
+
+  try {
+    const res = await fetch('/redact', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong');
+
+    let chips = Object.entries(data.summary).map(([k,v]) => `<span class="chip"><b>${v}</b> ${k}</span>`).join('');
+    resultEl.innerHTML = `
+      <h3>${data.total_redactions} PII instance(s) redacted</h3>
+      <div class="chips">${chips || '<span class="chip">No PII detected</span>'}</div>
+      <a class="dl" href="${data.download_url}">Download redacted .docx</a>
+    `;
+    resultEl.style.display = 'block';
+  } catch (err) {
+    errorEl.textContent = err.message;
+  } finally {
+    goBtn.disabled = false;
+    goBtn.textContent = 'Redact document';
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+uploads/*.docx
+outputs/*.docx
+!uploads/.gitkeep
+!outputs/.gitkeep
+*.pdf
+page-*.jpg
+.venv/
+venv/
+.DS_Store
